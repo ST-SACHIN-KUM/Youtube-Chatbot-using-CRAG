@@ -123,7 +123,7 @@ def get_score(query, document):
 def web_search(query):
     client = Groq(api_key=os.environ["GROQ_API_KEY"])
     response = client.chat.completions.create(
-        model="openai/gpt-oss-20b",  # or "groq/compound-mini"
+        model="openai/gpt-oss-20b",
         messages=[
             {
                 "role": "system",
@@ -135,7 +135,7 @@ def web_search(query):
                 },
             {
                 "role": "user",
-                "content": "explain critical thinking",
+                "content": query,
             },
             ],
         )
