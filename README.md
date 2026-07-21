@@ -94,7 +94,7 @@ The extension:
 - LangGraph
 - RAG / CRAG
 - Chroma or similar vector database
-- Chrome Extension (Manifest V3)
+- Chrome Extension
 - Groq / Gemini / other LLMs
 
 ## Conclusion
