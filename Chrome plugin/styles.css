@@ -1,0 +1,126 @@
+body {
+  width: 360px;
+  font-family: "Roboto", Arial, sans-serif;
+  margin: 0;
+  padding: 12px;
+  background: #ffffff;
+  color: #0f0f0f;
+}
+
+#chat-container {
+  display: flex;
+  flex-direction: column;
+  height: 460px;
+}
+
+#messages {
+  flex: 1;
+  overflow-y: auto;
+  border: 1px solid #e5e5e5;
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+  background: #f9f9f9;
+  scroll-behavior: smooth;
+}
+
+.message {
+  margin: 8px 0;
+  line-height: 1.4;
+  max-width: 85%;
+  word-wrap: break-word;
+  padding: 8px 10px;
+  border-radius: 12px;
+  position: relative;
+}
+
+.message.user {
+  margin-left: auto;
+  background: #0b57d0;
+  color: #ffffff;
+  border-bottom-right-radius: 4px;
+  text-align: left;
+}
+
+.message.bot {
+  margin-right: auto;
+  background: #ffffff;
+  color: #0f0f0f;
+  border: 1px solid #e5e5e5;
+  border-bottom-left-radius: 4px;
+  text-align: left;
+}
+
+/* Subtle typing indicator style (optional, if you add it later) */
+.message.bot.thinking {
+  color: #606060;
+  font-style: italic;
+}
+
+#chat-form {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+#question {
+  flex: 1;
+  padding: 10px 12px;
+  border-radius: 20px;
+  border: 1px solid #e5e5e5;
+  outline: none;
+  font-size: 14px;
+  background: #ffffff;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+#question:focus {
+  border-color: #0b57d0;
+  box-shadow: 0 0 0 2px rgba(11, 87, 208, 0.15);
+}
+
+#question::placeholder {
+  color: #aaaaaa;
+}
+
+button {
+  padding: 10px 14px;
+  border-radius: 20px;
+  border: none;
+  background: #0b57d0;
+  color: #ffffff;
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.05s ease;
+  white-space: nowrap;
+}
+
+button:hover {
+  background: #0842a0;
+}
+
+button:active {
+  transform: translateY(1px);
+}
+
+button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  background: #9aa0a6;
+}
+
+/* Scrollbar styling for a cleaner look (Chrome/Edge) */
+#messages::-webkit-scrollbar {
+  width: 6px;
+}
+
+#messages::-webkit-scrollbar-thumb {
+  background: #d0d0d0;
+  border-radius: 3px;
+}
+
+#messages::-webkit-scrollbar-track {
+  background: #f2f2f2;
+  border-radius: 3px;
+}

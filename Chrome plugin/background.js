@@ -1,0 +1,1 @@
+console.log("YouTube Chatbot background script loaded");

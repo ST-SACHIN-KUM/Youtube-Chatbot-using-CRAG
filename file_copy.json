@@ -1,0 +1,6 @@
+{
+    "GROQ_API_KEY" : "",
+    "GEMINI_API_KEY" : "",
+    "LOWER_BOUND" : 0.5,
+    "UPPER_BOUND" : 0.7
+}

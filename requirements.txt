@@ -1,0 +1,15 @@
+groq
+requests==2.32.4
+youtube-transcript-api 
+langchain-community 
+langchain-google-genai 
+langchain 
+langchain-core 
+langchain-chroma 
+python-dotenv
+langchain-groq
+langgraph
+streamlit
+fastapi
+google-genai 
+uvicorn
