@@ -47,7 +47,8 @@ The CRAG pipeline improves upon basic RAG by adding a correction step:
 
 This makes the chatbot more robust when retrieval is noisy or incomplete.
 
-<img width="157" height="547" alt="Screenshot 2026-07-21 113054" src="https://github.com/user-attachments/assets/1f8b0332-7d6d-4eea-897f-eeb4b46af170" />
+<img width="457" height="547" alt="Screenshot 2026-07-21 113054" src="<img width="1171" height="540" alt="Screenshot 2026-08-16 161539" src="https://github.com/user-attachments/assets/c6b3bbb5-20fa-4db7-a16f-90c562690d92" />
+" />
 
 ## LangGraph Flow
 
