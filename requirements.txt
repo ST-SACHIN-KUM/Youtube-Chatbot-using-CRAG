@@ -1,6 +1,6 @@
 groq==0.37.1
 requests==2.32.4
-youtube-transcript-api 
+youtube-transcript-api==1.2.4
 langchain-community==0.3.27
 langchain-google-genai==2.1.12
 langchain==0.3.30
