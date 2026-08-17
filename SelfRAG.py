@@ -14,6 +14,8 @@ from google import genai
 from google.genai import types
 import streamlit as st
 from langchain_core.documents import Document
+from langgraph.types import interrupt, Command
+from langgraph.checkpoint.memory import InMemorySaver
 import json
 from groq import Groq
 import re
@@ -23,10 +25,6 @@ import os
 with open('file.json', 'r') as file:
     data = json.load(file)
     
-    
-os.environ["GROQ_API_KEY"] = data['GROQ_API_KEY']
-os.environ["GEMINI_API_KEY"] = data['GEMINI_API_KEY']
-groq_api_key = data['GROQ_API_KEY']
 
 def extract_video_id(url_or_id: str) -> str | None:
     s = url_or_id.strip()
@@ -60,25 +58,29 @@ def get_transcript(video_id: str) -> str | None:
     
     except TranscriptsDisabled:
         return None
-    
+
 st.set_page_config(page_title="YouTube Summarizer", layout="centered")
 st.title("YouTube Summarizer")
+
+llm = None
+embeddings = None
+groq_api_key = data['GROQ_API_KEY']
+
+
+os.environ["GROQ_API_KEY"] = groq_api_key
+llm = ChatGroq(
+    model="llama-3.3-70b-versatile",
+    temperature=0.7,
+    )
+embeddings = GoogleGenerativeAIEmbeddings(
+    model="models/gemini-embedding-001",
+    google_api_key = data['GEMINI_API_KEY']
+)
 
 lower_bound = data["LOWER_BOUND"]
 upper_bound = data["UPPER_BOUND"]
 
-
-#LLM and embeddings model
-embeddings = GoogleGenerativeAIEmbeddings(
-    model="models/gemini-embedding-001",
-    google_api_key=data['GEMINI_API_KEY']
-)
-llm = ChatGroq(
-    model="llama-3.3-70b-versatile",
-    temperature=0.7,
-)
-
-CHROMA_PATH = "./chroma_db"
+CHROMA_PATH = "./chroma_db_2"
 COLLECTION_NAME = "youtube_videos"
 
 if embeddings is not None:
@@ -104,7 +106,6 @@ prompt_2 = PromptTemplate(
 )
 
 def get_score(query, document):
-    
   relevance_prompt = ChatPromptTemplate.from_template(
     "You are evaluating how relevant a document is for a given query.\n\n"
     "Query: {query}\n"
@@ -117,7 +118,7 @@ def get_score(query, document):
   relevance_chain = relevance_prompt | llm | StrOutputParser()
   score_str = relevance_chain.invoke({"query": query, "document": document})
   score = float(score_str.strip())
-  return score
+  return score    
 
 def web_search(query):
     client = Groq(api_key=os.environ["GROQ_API_KEY"])
@@ -140,19 +141,54 @@ def web_search(query):
         )
     return response.choices[0].message.content
 
+def clarifying(query):
+  relevance_prompt = ChatPromptTemplate.from_template(
+    "You are evaluating whether a given query is ambigous or not.\n\n"
+    "Query: {query}\n"
+    "Rate the ambiguity on a scale from 0 to 1, where:\n"
+    "0 = completely correct, no ambiguity\n"
+    "1 = perfectly ambigous query.\n\n"
+    "Return only a single float (e.g., 0.85)."
+    )
+  relevance_chain = relevance_prompt | llm | StrOutputParser()
+  score_str = relevance_chain.invoke({"query": query})
+  score = float(score_str.strip())
+  return score
+
+rewrite_prompt = ChatPromptTemplate.from_template(
+    "You are rewriting an question to be different in wording but keep the same meaning.\n"
+    "Question: {question}\n"
+    "Do not repeat the previous wording.\n"
+    "Use a new structure, different vocabulary, and a fresh style.\n"
+    "Keep it concise, relevant, and factually correct.\n"
+)
+
 
 class State(TypedDict):
-  input: str   #Query
-  docs: list    #retreived document
+    input : str
+    docs : list
+    refine_docs : list
+    route : str
+    feedback : str
+    ambiguous : int
+    clarification : str
+    final_answer : str
 
-  refine_doc: list #CRAG
-  answer: str   #output
-
-# def retrieve_document(state : State):
-#   q = state["input"]
-#   return {"docs": retriever.invoke(q)}
-
-def get_confidence_score(document, query):
+def ambiguous_score(state : State):
+    query = state["input"]
+    score = clarifying(query)
+    return {"ambiguous" : score}
+    
+def route_query(state : State):
+    score = state["ambiguous"]
+    if score > 0.6:
+        return {"route":"clarify"}
+    return {"route" : "answer"}
+    
+def clarify_question(state : State):
+    return {"clarification" : "Your question is ambiguous. Can you clarify what you want?"}
+    
+def get_refine_document(document, query):
   score = get_score(query, document)
   sentence = document.split('.')
   ans = ""
@@ -180,41 +216,81 @@ def get_confidence_score(document, query):
 
   return ans
 
-def refinement(state : State):
-  query = state["input"]
-  doc = state["docs"]
-  final_doc = list()
-  for document in doc:
-    ans = get_confidence_score(document.page_content, query)
-    final_doc.append(ans)
-  return {"refine_doc" : final_doc}
-
+def retrieve_correct_document(state : State):
+    query = state["input"]
+    docs = state["docs"]
+    final_doc = list()
+    for document in docs:
+        doc = get_refine_document(document.page_content, query)
+        final_doc.append(doc)
+    return {"refine_docs" : final_doc}
 
 def generator(state : State):
-  context_text = "\n\n".join(doc for doc in state["refine_doc"])
+  context_text = "\n\n".join(doc for doc in state["refine_docs"])
   final_prompt = prompt_2.invoke({"context": context_text, "question": state["input"]})
   answer_1 = llm.invoke(final_prompt)
   return {"answer": answer_1.content}
 
+def web_answer(state : State):
+    ans  = web_search(state["input"])
+    return {"final_answer" : ans}
+    
+def human_response(state : State):
+    user_input = interrupt({
+        "message": "Is this answer good enough?",
+        "options" : ["Yes", "llm", "RAG"]
+    })
+    choice = user_input.get("choice", False)
+    
+    if choice == "approve":
+        return Command(goto="end")
+    elif choice == "llm":
+        return Command(goto="web_answer")
+    else:
+        return Command(goto="rewrite_question")
+            
+
+def rewrite_question(state : State):
+  query = state["input"]
+  prompt_chain = rewrite_prompt | llm | StrOutputParser()
+  update_question = prompt_chain.invoke({"quesion" : query})
+
+  return {"input" : update_question}
 
 workflow = StateGraph(State)
 
-# workflow.add_node("retrieve", retrieve_document)
-workflow.add_node("generate", generator)
-workflow.add_node("refinement", refinement)
+workflow.add_node("ambiguous_score", ambiguous_score)
+workflow.add_node("routing", route_query)
+workflow.add_node("clarify", clarify_question)
+workflow.add_node("retrieve", retrieve_correct_document)
+workflow.add_node("generate_answer", generator)
+workflow.add_node("clarify", clarify_question)
+workflow.add_node("human_response", human_response)
+workflow.add_node("web_answer", web_answer)
+workflow.add_node("rewrite_question", rewrite_question)
 
 
-# workflow.add_edge(START, "retrieve")
-workflow.add_edge(START, "refinement")
-workflow.add_edge("refinement", "generate")
-workflow.add_edge("generate", END)
+workflow.add_edge(START, "ambiguous_score")
+workflow.add_edge("ambiguous_score", "routing")
+workflow.add_conditional_edges("routing", 
+                               lambda state: state["route"],
+                               {
+                                   "clarify" : "clarify",
+                                   "answer" : "retrieve"
+                               })
+workflow.add_edge("retrieve", "generate_answer")
+workflow.add_edge("generate_answer", "human_response")
+workflow.add_conditional_edges("human_response", human_response,
+                               {
+                                   "end" : END,
+                                   "web_answer" : "web_answer",
+                                   "rewrite_question" : "rewrite_question"
+                               })
+workflow.add_edge("web_answer", "human_response")
+workflow.add_edge("rewrite_question", "routing")
+workflow.add_edge("clarify", START)
 
-
-app = workflow.compile()
-
-# res = app.invoke({"input":"what is happiness", "docs": [], "refine_doc":[], "answer":""})
-# print(res["answer"])
-
+app = workflow.compile(checkpointer=InMemorySaver())
 
 def get_all_videos() -> list[dict]:
 
@@ -264,7 +340,7 @@ def update_video_display_name(video_id: str, display_name: str):
             ids=[doc_id],
             metadatas=[{"video_id": video_id, "display_name": display_name}],
         )
-
+        
 def index_video(video_id: str, transcript: str, display_name: str | None = None):
     text_splitter = RecursiveCharacterTextSplitter(
         chunk_size=500,
@@ -318,8 +394,7 @@ if st.button("Add Transcript to list"):
                 with st.spinner("Indexing video..."):
                     index_video(video_id, transcript, new_video_display_name or None)
                 st.success(f"Video '{new_video_display_name or video_id}' indexed.")
-    
-
+                
 st.subheader("Videos List")
 
 all_videos = get_all_videos()
@@ -388,6 +463,10 @@ else:
         
         # ----- Chat Tab (RAG with vector DB) -----
         with tab_chat:
+            
+            thread_id = selected_video_id       #thread has been initialised for each video transcript for persistence in memory
+            config={"configurable": {"thread_id": thread_id}}
+            
             st.subheader(f"Chat: {selected_display_name}")
 
             if "messages" not in st.session_state:
@@ -419,13 +498,29 @@ else:
 
                 with st.chat_message("assistant"):
                     with st.spinner("Thinking..."):
+                        
                         docs = retriever.invoke(prompt)
                         
-                        # context = "\n\n".join([d.page_content for d in docs])
+                        input = {"input":prompt, "docs": docs, "refine_doc":[], "final_answer":"",
+                                 "route":"", "feedback":"", "ambiguous":-1, "clarification":""}
                         
-                        result = app.invoke({"input":prompt, "docs": docs, "refine_doc":[], "answer":""})
-                        st.write(result["answer"])
+                        result = app.invoke(input, config=config)
+                        
+                        if result["clarification"] != "":
+                            st.write(result["clarification"])
+                        else:
+                            user_choice = st.radio("Choose one", ["approve", "LLM", "RAG"])
+                            feedback = st.text_input("Feedback")
+                            
+                            resume_input = {
+                                                "approved": user_choice == "approve",
+                                                "feedback": feedback,
+                                                "choice": user_choice,
+                                            }
+                            result = app.invoke(Command=(resume=), config = config)
+                        
                         st.session_state.messages.append(
                             {"role": "assistant", "content": result["answer"]}
                         )
+
 
